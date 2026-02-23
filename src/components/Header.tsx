@@ -5,7 +5,8 @@ export function Header() {
     <header className="fixed inset-x-0 top-0 z-50 border-b border-surface-border bg-surface backdrop-blur-xl">
       <div className="mx-auto flex max-w-4xl items-center justify-between px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary">
+          <a href="/" className="flex items-center gap-3 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-primary group-hover:opacity-80 transition-opacity">
             <svg
               className="h-4 w-4 text-white"
               fill="none"
@@ -23,6 +24,7 @@ export function Header() {
           <span className="font-heading text-lg font-bold text-white">
             MeetAI
           </span>
+          </a>
         </div>
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "MeetAI — AI 会议纪要助手",
+  title: "ToolsAI — AI 效率工具集",
   description:
-    "上传会议录音或粘贴文字稿，AI 自动生成摘要、待办事项和可复制的会议纪要",
+    "精心打造的 AI 工具集：会议纪要助手、视频图片格式转换器，专业、可靠、开箱即用。",
 };
 
 export default function RootLayout({
