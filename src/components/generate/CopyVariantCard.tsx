@@ -86,7 +86,7 @@ export function CopyVariantCard({ variant }: CopyVariantCardProps) {
             </button>
           </div>
           <p className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-2.5 text-xs italic text-gray-400 leading-relaxed">
-            "{variant.hook}"
+            &quot;{variant.hook}&quot;
           </p>
         </div>
 
