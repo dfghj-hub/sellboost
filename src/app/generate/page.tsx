@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect } from "react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { PlatformSelector } from "@/components/generate/PlatformSelector";
@@ -35,6 +34,26 @@ interface GenerateHistoryItem {
   pack: SellingPack;
 }
 
+const PLATFORM_ICONS: Record<string, string> = {
+  xiaohongshu: "📕", douyin: "🎵", wechat: "💬", bilibili: "📺", kuaishou: "⚡",
+};
+const PLATFORM_NAMES: Record<string, string> = {
+  xiaohongshu: "小红书", douyin: "抖音", wechat: "微信", bilibili: "B站", kuaishou: "快手",
+};
+
+const CONTENT_TYPES = [
+  { id: "image_text" as const, icon: "🖼️", label: "图文", desc: "小红书 / 微信" },
+  { id: "spoken" as const, icon: "🎙️", label: "口播", desc: "抖音 / 快手" },
+  { id: "review" as const, icon: "🔬", label: "测评", desc: "B站 / 深度" },
+];
+
+const CONVERSION_GOALS = [
+  { id: "awareness" as const, label: "品牌曝光" },
+  { id: "engagement" as const, label: "互动涨粉" },
+  { id: "leads" as const, label: "留资获客" },
+  { id: "sales" as const, label: "直接转化" },
+];
+
 export default function GeneratePage() {
   const [step, setStep] = useState<"input" | "loading" | "result">("input");
   const [productText, setProductText] = useState("");
@@ -50,6 +69,7 @@ export default function GeneratePage() {
   const [publishMode, setPublishMode] = useState<"image_text" | "spoken" | "review">("image_text");
   const [conversionGoal, setConversionGoal] = useState<"awareness" | "engagement" | "leads" | "sales">("awareness");
   const [focusAngle, setFocusAngle] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     try {
@@ -58,9 +78,7 @@ export default function GeneratePage() {
       setSelectedBrandProfileId(activeId);
       const active = getActiveStyleProfile(profiles, activeId);
       setHasBrandVoice(active ? hasStyleProfile(active.profile) : false);
-    } catch {
-      setHasBrandVoice(false);
-    }
+    } catch { setHasBrandVoice(false); }
   }, []);
 
   useEffect(() => {
@@ -69,120 +87,85 @@ export default function GeneratePage() {
       if (!raw) return;
       const parsed = JSON.parse(raw) as unknown;
       if (!Array.isArray(parsed)) return;
-      const records = parsed
-        .map((item) => {
-          if (!item || typeof item !== "object") return null;
-          const o = item as Record<string, unknown>;
-          if (!o.pack || typeof o.pack !== "object") return null;
-          const platformsFromHistory = Array.isArray(o.platforms)
-            ? (o.platforms as unknown[]).filter(
-                (p): p is PlatformId =>
-                  typeof p === "string" &&
-                  ["xiaohongshu", "douyin", "wechat", "bilibili", "kuaishou"].includes(p)
-              )
-            : ["xiaohongshu", "douyin"];
-          return {
-            id: typeof o.id === "string" ? o.id : `${Date.now()}_${Math.random()}`,
-            createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date().toISOString(),
-            productText: typeof o.productText === "string" ? o.productText : "",
-            productUrl: typeof o.productUrl === "string" ? o.productUrl : "",
-            platforms: platformsFromHistory,
-            useBrandVoice: Boolean(o.useBrandVoice),
-            brandProfileId: typeof o.brandProfileId === "string" ? o.brandProfileId : null,
-            publishMode: o.publishMode === "spoken" || o.publishMode === "review" ? o.publishMode : "image_text",
-            conversionGoal:
-              o.conversionGoal === "engagement" || o.conversionGoal === "leads" || o.conversionGoal === "sales"
-                ? o.conversionGoal
-                : "awareness",
-            focusAngle: typeof o.focusAngle === "string" ? o.focusAngle : "",
-            pack: o.pack as SellingPack,
-          } as GenerateHistoryItem;
-        })
-        .filter((item): item is GenerateHistoryItem => item !== null);
+      const records = parsed.map((item) => {
+        if (!item || typeof item !== "object") return null;
+        const o = item as Record<string, unknown>;
+        if (!o.pack || typeof o.pack !== "object") return null;
+        const pf = Array.isArray(o.platforms)
+          ? (o.platforms as unknown[]).filter(
+              (p): p is PlatformId =>
+                typeof p === "string" &&
+                ["xiaohongshu","douyin","wechat","bilibili","kuaishou"].includes(p)
+            )
+          : ["xiaohongshu", "douyin"];
+        return {
+          id: typeof o.id === "string" ? o.id : String(Date.now()),
+          createdAt: typeof o.createdAt === "string" ? o.createdAt : new Date().toISOString(),
+          productText: typeof o.productText === "string" ? o.productText : "",
+          productUrl: typeof o.productUrl === "string" ? o.productUrl : "",
+          platforms: pf,
+          useBrandVoice: Boolean(o.useBrandVoice),
+          brandProfileId: typeof o.brandProfileId === "string" ? o.brandProfileId : null,
+          publishMode: o.publishMode === "spoken" || o.publishMode === "review" ? o.publishMode : "image_text",
+          conversionGoal: o.conversionGoal === "engagement" || o.conversionGoal === "leads" || o.conversionGoal === "sales" ? o.conversionGoal : "awareness",
+          focusAngle: typeof o.focusAngle === "string" ? o.focusAngle : "",
+          pack: o.pack as SellingPack,
+        } as GenerateHistoryItem;
+      }).filter((x): x is GenerateHistoryItem => x !== null);
       setHistoryItems(records);
-    } catch {
-      // ignore parse errors
-    }
+    } catch {}
   }, []);
 
   function persistHistory(items: GenerateHistoryItem[]) {
     setHistoryItems(items);
-    try {
-      window.localStorage.setItem(GENERATE_HISTORY_KEY, JSON.stringify(items));
-    } catch {}
+    try { window.localStorage.setItem(GENERATE_HISTORY_KEY, JSON.stringify(items)); } catch {}
+  }
+  function deleteHistoryItem(id: string) { persistHistory(historyItems.filter((h) => h.id !== id)); }
+  function applyHistoryInput(item: GenerateHistoryItem) {
+    setProductText(item.productText); setProductUrl(item.productUrl);
+    setPlatforms(item.platforms); setPublishMode(item.publishMode);
+    setConversionGoal(item.conversionGoal); setFocusAngle(item.focusAngle);
+    setUseBrandVoice(item.useBrandVoice);
+    if (item.brandProfileId) setSelectedBrandProfileId(item.brandProfileId);
+    setStep("input"); setHistoryOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+  function openHistoryResult(item: GenerateHistoryItem) {
+    setPack(item.pack); setStep("result"); setHistoryOpen(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleGenerate() {
     const text = productText.trim();
-    if (!text) {
-      setError("请填写产品描述");
-      return;
-    }
-
-    setError("");
-    setStep("loading");
+    if (!text) { setError("请填写产品描述，这是生成高质量文案的基础"); return; }
+    setError(""); setStep("loading");
     trackEvent({ event: "flow_start_generate", payload: { flow: FLOW_NAME } });
-
     try {
-      const analyzeRes = await fetch("/api/analyze-product", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          url: productUrl.trim() || undefined,
-        }),
+      const ar = await fetch("/api/analyze-product", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, url: productUrl.trim() || undefined }),
       });
-      if (!analyzeRes.ok) {
-        const data = await analyzeRes.json().catch(() => ({}));
-        throw new Error(data?.error || "产品分析失败");
-      }
-      const product: AnalyzedProduct = await analyzeRes.json();
-
+      if (!ar.ok) { const d = await ar.json().catch(() => ({})); throw new Error((d as {error?:string})?.error || "产品分析失败"); }
+      const product: AnalyzedProduct = await ar.json();
       let brandVoice = undefined;
       if (useBrandVoice && typeof window !== "undefined") {
         const { profiles, activeId } = loadStyleProfileListFromStorage(window.localStorage);
-        const selected = selectedBrandProfileId
-          ? profiles.find((p) => p.id === selectedBrandProfileId) ?? null
-          : getActiveStyleProfile(profiles, activeId);
-        brandVoice = selected?.profile;
+        const sel = selectedBrandProfileId ? profiles.find((p) => p.id === selectedBrandProfileId) ?? null : getActiveStyleProfile(profiles, activeId);
+        brandVoice = sel?.profile;
       }
-
-      const packRes = await fetch("/api/generate-selling-pack", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          product,
-          platforms,
-          brandVoice: brandVoice && (brandVoice.brandVoice || brandVoice.audience) ? brandVoice : undefined,
-          publishMode,
-          conversionGoal,
-          focusAngle: focusAngle.trim() || undefined,
-        }),
+      const pr = await fetch("/api/generate-selling-pack", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product, platforms, brandVoice: brandVoice && (brandVoice.brandVoice || brandVoice.audience) ? brandVoice : undefined, publishMode, conversionGoal, focusAngle: focusAngle.trim() || undefined }),
       });
-      if (!packRes.ok) {
-        const data = await packRes.json().catch(() => ({}));
-        throw new Error(data?.error || "内容包生成失败");
-      }
-      const packData: SellingPack = await packRes.json();
-      setPack(packData);
-      setStep("result");
-      const nextHistory: GenerateHistoryItem[] = [
-        {
-          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          createdAt: new Date().toISOString(),
-          productText: text,
-          productUrl: productUrl.trim(),
-          platforms,
-          useBrandVoice: Boolean(useBrandVoice),
-          brandProfileId: useBrandVoice ? selectedBrandProfileId : null,
-          publishMode,
-          conversionGoal,
-          focusAngle,
-          pack: packData,
-        },
-        ...historyItems,
-      ].slice(0, MAX_HISTORY_ITEMS);
-      persistHistory(nextHistory);
+      if (!pr.ok) { const d = await pr.json().catch(() => ({})); throw new Error((d as {error?:string})?.error || "内容包生成失败"); }
+      const packData: SellingPack = await pr.json();
+      setPack(packData); setStep("result");
+      persistHistory([{
+        id: `${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+        createdAt: new Date().toISOString(), productText: text, productUrl: productUrl.trim(),
+        platforms, useBrandVoice: Boolean(useBrandVoice), brandProfileId: useBrandVoice ? selectedBrandProfileId : null,
+        publishMode, conversionGoal, focusAngle, pack: packData,
+      }, ...historyItems].slice(0, MAX_HISTORY_ITEMS));
       trackEvent({ event: "flow_complete_generate", payload: { flow: FLOW_NAME } });
     } catch (e) {
       setError(e instanceof Error ? e.message : "生成失败，请重试");
@@ -193,472 +176,365 @@ export default function GeneratePage() {
 
   function downloadAll() {
     if (!pack) return;
-    const lines: string[] = [
-      `# ${pack.product.name} - 全平台带货内容包`,
-      `生成时间：${pack.generatedAt}`,
-      "",
-    ];
-    pack.platforms.forEach((p) => {
-      lines.push(`## ${p.platformName}`);
-      p.variants.forEach((v) => {
-        lines.push(`### 变体 ${v.id}`);
-        lines.push(v.title);
-        lines.push(v.hook);
-        lines.push(v.body);
-        lines.push(v.cta);
-        lines.push(v.tags.join(" "));
-        lines.push("");
-      });
-      lines.push("");
-    });
-    const blob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+    const lines = [`# ${pack.product.name} — 全平台带货内容包`, `生成时间：${pack.generatedAt}`, "", "---", ""];
+    for (const p of pack.platforms) {
+      lines.push(`## ${p.platformName}`, "");
+      for (const v of p.variants) {
+        lines.push(`### 变体 ${v.id}`, `**标题：** ${v.title}`, "", v.body, "", `**标签：** ${v.tags.join(" ")}`, `**发布时间：** ${v.postingTime}`, "");
+      }
+      lines.push("---", "");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `sellboost-${pack.product.name}-${new Date().toISOString().slice(0, 10)}.txt`;
-    a.click();
+    const a = document.createElement("a"); a.href = url;
+    a.download = `sellboost_${pack.product.name}_${Date.now()}.md`; a.click();
     URL.revokeObjectURL(url);
   }
 
-  function applyHistoryInput(item: GenerateHistoryItem) {
-    setProductText(item.productText);
-    setProductUrl(item.productUrl);
-    setPlatforms(item.platforms);
-    setUseBrandVoice(item.useBrandVoice);
-    setSelectedBrandProfileId(item.brandProfileId);
-    setPublishMode(item.publishMode);
-    setConversionGoal(item.conversionGoal);
-    setFocusAngle(item.focusAngle);
-    setError("");
-    setStep("input");
-  }
+  const isEmpty = productText.trim().length === 0;
 
-  function openHistoryResult(item: GenerateHistoryItem) {
-    setPack(item.pack);
-    setStep("result");
-  }
+  return (
+    <main className="min-h-screen">
+      {/* Ambient glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -top-40 left-1/4 h-[500px] w-[500px] rounded-full bg-orange-600/[0.06] blur-[120px]" />
+        <div className="absolute -top-20 right-1/4 h-[400px] w-[400px] rounded-full bg-pink-600/[0.05] blur-[100px]" />
+        <div className="absolute bottom-0 left-1/2 h-[300px] w-[600px] -translate-x-1/2 rounded-full bg-indigo-600/[0.04] blur-[100px]" />
+      </div>
 
-  function deleteHistoryItem(id: string) {
-    const next = historyItems.filter((item) => item.id !== id);
-    persistHistory(next);
-  }
+      <div className="relative mx-auto max-w-6xl px-4 py-10 md:px-6 lg:py-14">
 
-  if (step === "loading") {
-    return (
-      <main className="relative z-10 mx-auto min-h-[80vh] flex items-center justify-center max-w-3xl px-4 py-12">
-        <div className="absolute inset-0 -z-10 flex items-center justify-center pointer-events-none">
-          <div className="h-[400px] w-[400px] rounded-full bg-orange-500/10 blur-[120px]" />
-        </div>
-        <div className="glass-card w-full p-12 text-center rounded-3xl border border-white/5 bg-black/40 backdrop-blur-2xl shadow-2xl">
-          <LoadingSpinner stage="AI 正在深度拆解产品并构建内容策略矩阵..." />
-          <p className="mt-6 text-sm text-gray-400">这可能需要 15-30 秒，请耐心等待</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (step === "result" && pack) {
-    const basis = [
-      `核心产品：${pack.product.name}`,
-      ...pack.product.usps.slice(0, 3),
-      ...pack.product.differentiators.slice(0, 2),
-    ];
-    const risks = [
-      "AI 生成内容具备随机性，发布前务必人工核对业务信息",
-      "不同平台限流规则可能随时更新，请注意避免最新违禁词",
-    ];
-    const checkpoints = [
-      "检查核心卖点是否夸大或虚假承诺",
-      "确认标题和文案长度符合各平台最佳实践",
-      "核对转化引导（CTA）是否符合当前商业目标",
-    ];
-
-    return (
-      <main className="relative z-10 mx-auto max-w-6xl px-4 py-10 pb-24">
-        {/* Result Header */}
-        <header className="mb-10 flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+        {/* Page Header */}
+        <div className="mb-10 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
           <div>
-            <div className="mb-2 flex items-center gap-3">
-              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-green-500/10 text-green-400">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </span>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-green-400/80">
-                生成成功
-              </p>
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-orange-500/20 bg-orange-500/10 px-3.5 py-1.5">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-orange-400" />
+              <span className="text-xs font-semibold tracking-wide text-orange-400">AI 内容引擎</span>
             </div>
-            <h1 className="font-heading text-3xl font-bold tracking-tight text-white/95">
-              内容矩阵已就绪
-            </h1>
-            <p className="mt-2 text-base text-gray-400">
-              基于您的策略，AI 为 {pack.platforms.length} 个平台定制了专属种草文案。
+            <h1 className="font-heading text-3xl font-bold text-white md:text-4xl">生成带货内容矩阵</h1>
+            <p className="mt-2 max-w-lg text-base text-gray-400">
+              输入产品信息，AI 自动分析并为每个平台生成 3 套差异化文案变体，覆盖理性、情感与紧迫三种策略。
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => {
-                setStep("input");
-                setPack(null);
-              }}
-              className="group flex h-11 items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 text-sm font-medium text-white/80 transition-all hover:bg-white/10 hover:text-white"
-            >
-              <svg className="h-4 w-4 text-gray-400 transition-transform group-hover:-translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-              返回修改
-            </button>
-            <button
-              onClick={downloadAll}
-              className="flex h-11 items-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-pink-500 px-6 text-sm font-semibold text-white shadow-[0_0_20px_rgba(249,115,22,0.3)] transition-all hover:shadow-[0_0_30px_rgba(249,115,22,0.5)] hover:brightness-110"
-            >
+          {historyItems.length > 0 && (
+            <button type="button" onClick={() => setHistoryOpen((o) => !o)} className="btn-ghost flex w-fit items-center gap-2 lg:hidden">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              一键下载全部
+              历史记录
+              <span className="rounded-full bg-orange-500/20 px-2 py-0.5 text-xs font-semibold text-orange-400">{historyItems.length}</span>
             </button>
-          </div>
-        </header>
-
-        <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
-          {/* Main Content Area */}
-          <div className="lg:col-span-8 space-y-8">
-            <PlatformResultTabs platforms={pack.platforms} />
-          </div>
-
-          {/* Sidebar */}
-          <div className="lg:col-span-4 space-y-6">
-            <ProductAnalysisCard product={pack.product} />
-            <VerifiedResultCard
-              basis={basis}
-              risks={risks}
-              checkpoints={checkpoints}
-              onRegenerate={() => {
-                setStep("input");
-                setPack(null);
-              }}
-              onBacktrack={() => {
-                setStep("input");
-                setPack(null);
-              }}
-            />
-            <FlowFeedback flow={FLOW_NAME} />
-          </div>
+          )}
         </div>
-      </main>
-    );
-  }
 
-  // Input Step (Default)
-  return (
-    <main className="relative z-10 mx-auto max-w-7xl px-4 py-10 pb-24">
-      {/* Background ambient glow */}
-      <div className="absolute top-0 right-0 -z-10 h-[600px] w-[600px] -translate-y-1/4 translate-x-1/4 rounded-full bg-orange-500/5 blur-[120px] pointer-events-none" />
-      
-      {/* Page Header */}
-      <header className="mb-10 text-center md:text-left">
-        <p className="mb-2 text-xs font-bold uppercase tracking-[0.25em] text-orange-400/80">
-          Content Engine v2
-        </p>
-        <h1 className="font-heading text-3xl font-bold tracking-tight text-white/95 md:text-4xl">
-          生成带货内容矩阵
-        </h1>
-        <p className="mt-3 text-base text-gray-400 max-w-2xl">
-          只需输入产品核心信息与营销策略，AI 引擎将自动匹配各社交平台算法规则，一次性产出高质量、高转化的图文或口播内容。
-        </p>
-      </header>
+        {/* Two-column layout */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_300px]">
 
-      <div className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
-        {/* Left Column: Input Form */}
-        <div className="lg:col-span-8">
-          <section className="rounded-3xl border border-white/10 bg-[#09090b]/80 p-6 md:p-8 backdrop-blur-xl shadow-2xl">
-            <div className="mb-6 flex items-center gap-3 border-b border-white/5 pb-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/10 text-orange-400">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-              </div>
-              <h2 className="font-heading text-lg font-semibold tracking-wide text-white/90">
-                构建内容策略
-              </h2>
-            </div>
+          {/* LEFT */}
+          <div className="min-w-0 space-y-5">
 
-            <div className="space-y-8">
-              {/* Product Info */}
-              <div className="space-y-5">
-                <div>
-                  <label className="mb-2.5 flex items-center gap-2 text-sm font-medium text-gray-300">
-                    产品/服务核心描述 <span className="text-orange-400">*</span>
-                  </label>
+            {step !== "result" && (
+              <div className="animate-fade-up space-y-5">
+
+                {/* Product Description */}
+                <div className="glass-card-elevated p-6">
+                  <div className="mb-4 flex items-center gap-2.5">
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500/25 to-pink-500/25">
+                      <span className="text-sm">📝</span>
+                    </div>
+                    <label className="font-heading text-sm font-semibold text-white">
+                      产品描述<span className="ml-1 text-orange-400">*</span>
+                    </label>
+                    <span className="ml-auto text-xs text-gray-600">{productText.length} 字</span>
+                  </div>
                   <textarea
+                    rows={5}
+                    className="input-glass resize-none text-sm leading-relaxed"
+                    placeholder={"详细描述您的产品：核心功能、独特优势、目标用户、使用场景、价格区间……\n\n描述越详细，生成的文案质量越高。可直接粘贴电商详情页文案。"}
                     value={productText}
                     onChange={(e) => setProductText(e.target.value)}
-                    placeholder="例如：一款专门针对油敏肌的积雪草舒缓精华，核心成分是 5% 高浓度积雪草提取物，无酒精无香精。适合熬夜爆痘急救，价格 129元/30ml..."
-                    rows={5}
-                    className="w-full resize-y rounded-2xl border border-white/10 bg-black/40 px-5 py-4 text-sm text-white/90 placeholder-gray-500 transition-all focus:border-orange-500/50 focus:bg-black/60 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                   />
-                </div>
-                <div>
-                  <label className="mb-2.5 flex items-center gap-2 text-sm font-medium text-gray-300">
-                    参考链接 <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">可选</span>
-                  </label>
-                  <div className="relative">
-                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
-                      <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                      </svg>
-                    </div>
+                  <div className="mt-3 flex items-center gap-2">
+                    <svg className="h-4 w-4 flex-shrink-0 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
                     <input
                       type="url"
+                      className="input-glass py-2.5 text-sm"
+                      placeholder="产品链接（可选）：淘宝 / 京东 / 官网 URL"
                       value={productUrl}
                       onChange={(e) => setProductUrl(e.target.value)}
-                      placeholder="输入商品详情页、官网或竞品链接（AI 将自动抓取信息）"
-                      className="w-full rounded-2xl border border-white/10 bg-black/40 py-3.5 pl-11 pr-4 text-sm text-white/90 placeholder-gray-500 transition-all focus:border-orange-500/50 focus:bg-black/60 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                     />
                   </div>
                 </div>
-              </div>
 
-              {/* Platform Selector */}
-              <div className="pt-4 border-t border-white/5">
-                <label className="mb-4 block text-sm font-medium text-gray-300">
-                  分发平台
-                </label>
-                <PlatformSelector selected={platforms} onChange={setPlatforms} />
-              </div>
-
-              {/* Advanced Settings */}
-              <div className="pt-4 border-t border-white/5 grid gap-6 md:grid-cols-2">
-                <div>
-                  <label className="mb-2.5 block text-sm font-medium text-gray-300">
-                    内容表现形式
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={publishMode}
-                      onChange={(e) =>
-                        setPublishMode(e.target.value as "image_text" | "spoken" | "review")
-                      }
-                      className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 pr-10 text-sm text-white/90 transition-all focus:border-orange-500/50 focus:bg-black/60 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                    >
-                      <option value="image_text" className="bg-[#1a1a1a] text-gray-200">图文种草 (适合小红书/公众号)</option>
-                      <option value="spoken" className="bg-[#1a1a1a] text-gray-200">口播短视频 (适合抖音/快手/视频号)</option>
-                      <option value="review" className="bg-[#1a1a1a] text-gray-200">深度横评/对比 (适合B站/小红书长文)</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-gray-500">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
+                {/* Platform + Content Type + Goal */}
+                <div className="glass-card-elevated space-y-6 p-6">
+                  <PlatformSelector selected={platforms} onChange={setPlatforms} />
+                  <div className="gradient-divider" />
+                  <div>
+                    <p className="mb-3 text-sm font-medium text-gray-300">内容形式</p>
+                    <div className="grid grid-cols-3 gap-3">
+                      {CONTENT_TYPES.map((ct) => (
+                        <button
+                          key={ct.id}
+                          type="button"
+                          onClick={() => setPublishMode(ct.id)}
+                          className={`content-type-card ${publishMode === ct.id ? "active" : ""}`}
+                        >
+                          <span className="text-2xl">{ct.icon}</span>
+                          <span className={`text-sm font-semibold ${publishMode === ct.id ? "text-orange-400" : "text-gray-300"}`}>{ct.label}</span>
+                          <span className="text-[10px] text-gray-600">{ct.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="gradient-divider" />
+                  <div>
+                    <p className="mb-3 text-sm font-medium text-gray-300">转化目标</p>
+                    <div className="flex flex-wrap gap-2">
+                      {CONVERSION_GOALS.map((g) => (
+                        <button
+                          key={g.id}
+                          type="button"
+                          onClick={() => setConversionGoal(g.id)}
+                          className={`rounded-xl border px-4 py-2 text-sm font-medium transition-all duration-200 ${
+                            conversionGoal === g.id
+                              ? "border-orange-500/40 bg-orange-500/[0.12] text-orange-400"
+                              : "border-surface-border bg-surface text-gray-400 hover:border-white/20 hover:text-white"
+                          }`}
+                        >
+                          {g.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
-                <div>
-                  <label className="mb-2.5 block text-sm font-medium text-gray-300">
-                    首要转化目标
-                  </label>
-                  <div className="relative">
-                    <select
-                      value={conversionGoal}
-                      onChange={(e) =>
-                        setConversionGoal(e.target.value as "awareness" | "engagement" | "leads" | "sales")
-                      }
-                      className="w-full appearance-none rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 pr-10 text-sm text-white/90 transition-all focus:border-orange-500/50 focus:bg-black/60 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                    >
-                      <option value="awareness" className="bg-[#1a1a1a] text-gray-200">曝光与心智教育 (弱营销)</option>
-                      <option value="engagement" className="bg-[#1a1a1a] text-gray-200">引发互动/评论 (吸粉涨粉)</option>
-                      <option value="leads" className="bg-[#1a1a1a] text-gray-200">引流私域/留资 (引导加微)</option>
-                      <option value="sales" className="bg-[#1a1a1a] text-gray-200">直接带货/挂车 (强转化成交)</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-gray-500">
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
-                  </div>
-                </div>
-                <div className="md:col-span-2">
-                  <label className="mb-2.5 block text-sm font-medium text-gray-300">
-                    特定内容切入点 <span className="rounded bg-white/5 px-2 py-0.5 text-[10px] text-gray-400">可选</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={focusAngle}
-                    onChange={(e) => setFocusAngle(e.target.value)}
-                    placeholder="例如：强调性价比极高、重点针对熬夜加班人群、制造紧迫感促销..."
-                    className="w-full rounded-xl border border-white/10 bg-black/40 px-4 py-3.5 text-sm text-white/90 placeholder-gray-500 transition-all focus:border-orange-500/50 focus:bg-black/60 focus:outline-none focus:ring-1 focus:ring-orange-500/50"
-                  />
-                </div>
-              </div>
 
-              {/* Brand Voice */}
-              {hasBrandVoice && (
-                <div className="pt-4 border-t border-white/5">
-                  <div className="rounded-2xl border border-orange-500/20 bg-orange-500/[0.02] p-5 transition-all">
-                    <label className="flex cursor-pointer items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className={`flex h-10 w-10 items-center justify-center rounded-full ${useBrandVoice ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30' : 'bg-white/5 text-gray-400'} transition-all`}>
-                          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-                          </svg>
-                        </div>
-                        <div>
-                          <p className={`text-sm font-semibold ${useBrandVoice ? 'text-white' : 'text-gray-300'}`}>启用品牌定制语感</p>
-                          <p className="mt-0.5 text-xs text-gray-500">让生成的内容更符合您的品牌专属调性与禁忌</p>
-                        </div>
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="checkbox"
-                          checked={useBrandVoice}
-                          onChange={(e) => setUseBrandVoice(e.target.checked)}
-                          className="sr-only"
-                        />
-                        <div className={`block h-6 w-10 rounded-full transition-colors ${useBrandVoice ? 'bg-orange-500' : 'bg-gray-700'}`}></div>
-                        <div className={`dot absolute left-1 top-1 h-4 w-4 rounded-full bg-white transition-transform ${useBrandVoice ? 'translate-x-4' : ''}`}></div>
-                      </div>
-                    </label>
-                    
+                {/* Advanced Settings */}
+                <div className="glass-card-elevated space-y-5 p-6">
+                  <p className="font-heading text-sm font-semibold text-white/60">高级设置（可选）</p>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-gray-400">内容角度 / 创作方向</label>
+                    <input
+                      type="text"
+                      className="input-glass text-sm"
+                      placeholder="例：突出性价比、强调成分天然、针对敏感肌人群、节日礼品场景……"
+                      value={focusAngle}
+                      onChange={(e) => setFocusAngle(e.target.value)}
+                      maxLength={100}
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between">
+                      <label className="flex cursor-pointer items-center gap-3">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={useBrandVoice}
+                          onClick={() => setUseBrandVoice((v) => !v)}
+                          className={`relative h-5 w-9 rounded-full transition-colors duration-200 ${useBrandVoice ? "bg-orange-500" : "bg-white/10"}`}
+                        >
+                          <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 ${useBrandVoice ? "translate-x-4" : "translate-x-0.5"}`} />
+                        </button>
+                        <span className="text-sm font-medium text-gray-300">应用品牌语音档案</span>
+                      </label>
+                      {!hasBrandVoice && (
+                        <a href="/brand" className="text-xs text-orange-400 transition-colors hover:text-orange-300">去创建档案 →</a>
+                      )}
+                    </div>
                     {useBrandVoice && brandProfiles.length > 0 && (
-                      <div className="mt-5 animate-in slide-in-from-top-2 fade-in duration-200">
-                        <label className="mb-2 block text-xs font-medium text-orange-400/80 uppercase tracking-wider">选择应用档案</label>
-                        <div className="relative">
-                          <select
-                            value={selectedBrandProfileId ?? ""}
-                            onChange={(e) => setSelectedBrandProfileId(e.target.value || null)}
-                            className="w-full appearance-none rounded-xl border border-orange-500/20 bg-black/60 px-4 py-3 pr-10 text-sm text-white/90 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                          >
-                            {brandProfiles.map((p) => (
-                              <option key={p.id} value={p.id} className="bg-[#1a1a1a] text-gray-200">
-                                {p.profileName}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-4 text-orange-500/60">
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                          </div>
-                        </div>
+                      <div className="mt-3 animate-fade-in">
+                        <select
+                          className="input-glass text-sm"
+                          value={selectedBrandProfileId ?? ""}
+                          onChange={(e) => setSelectedBrandProfileId(e.target.value || null)}
+                        >
+                          {brandProfiles.map((p) => <option key={p.id} value={p.id}>{p.profileName}</option>)}
+                        </select>
                       </div>
+                    )}
+                    {useBrandVoice && !hasBrandVoice && (
+                      <p className="mt-2 text-xs text-amber-400/80">尚未创建品牌语音档案，文案将使用默认风格生成</p>
                     )}
                   </div>
                 </div>
-              )}
 
-              {error && (
-                <div className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                  <svg className="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {error}
+                {error && (
+                  <div className="flex animate-fade-in items-start gap-3 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3">
+                    <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p className="text-sm text-red-300">{error}</p>
+                  </div>
+                )}
+
+                {step === "input" && (
+                  <button
+                    type="button"
+                    onClick={handleGenerate}
+                    disabled={isEmpty}
+                    className="btn-primary w-full py-4 text-base"
+                  >
+                    <span className="flex items-center justify-center gap-2.5">
+                      <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                      </svg>
+                      智能分析并生成策略矩阵
+                      {platforms.length > 0 && (
+                        <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium">
+                          {platforms.length} 个平台 · 各 3 套变体
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {step === "loading" && (
+              <div className="animate-fade-up">
+                <LoadingSpinner stage="AI 正在深度分析产品特征，生成全平台内容矩阵…" />
+              </div>
+            )}
+
+            {step === "result" && pack && (
+              <div className="animate-fade-up space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full border border-emerald-500/25 bg-emerald-500/15">
+                      <svg className="h-4 w-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-heading text-sm font-semibold text-white">策略矩阵已生成</p>
+                      <p className="text-xs text-gray-500">
+                        {pack.platforms.length} 个平台 · 共 {pack.platforms.reduce((s, p) => s + p.variants.length, 0)} 套文案
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <button type="button" onClick={downloadAll} className="btn-ghost flex items-center gap-2 text-sm">
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      下载全部
+                    </button>
+                    <button type="button" onClick={() => { setStep("input"); setPack(null); }} className="btn-primary py-2.5 text-sm">
+                      重新生成
+                    </button>
+                  </div>
                 </div>
-              )}
 
-              <button
-                type="button"
-                onClick={handleGenerate}
-                disabled={!productText.trim()}
-                className="group relative flex w-full items-center justify-center gap-2 overflow-hidden rounded-2xl bg-gradient-to-r from-orange-500 to-pink-500 px-6 py-4 text-base font-bold text-white shadow-[0_0_30px_rgba(249,115,22,0.2)] transition-all hover:shadow-[0_0_40px_rgba(249,115,22,0.4)] hover:brightness-110 disabled:opacity-50 disabled:hover:shadow-[0_0_30px_rgba(249,115,22,0.2)] disabled:hover:brightness-100"
-              >
-                <div className="absolute inset-0 bg-white/20 opacity-0 transition-opacity group-hover:opacity-100" />
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                智能分析并生成策略矩阵
-              </button>
-            </div>
-          </section>
-        </div>
+                <ProductAnalysisCard product={pack.product} />
 
-        {/* Right Column: History */}
-        <div className="lg:col-span-4 space-y-6">
-          {historyItems.length > 0 ? (
-            <section className="rounded-3xl border border-white/5 bg-[#09090b]/60 p-6 backdrop-blur-md">
-              <div className="mb-5 flex items-center justify-between">
+                <VerifiedResultCard
+                  basis={[
+                    `基于产品描述提取的 ${pack.product.usps.length} 个核心卖点`,
+                    `匹配 ${pack.platforms.length} 个平台的内容规则与算法偏好`,
+                    "参考各平台最佳发布时间与 CTA 模式",
+                  ]}
+                  risks={[
+                    "AI 生成内容可能需要根据实际产品情况调整",
+                    "平台规则与算法可能随时更新，建议定期重新生成",
+                    "效果因产品品类、账号权重和发布时机而异",
+                  ]}
+                  checkpoints={[
+                    "核对文案中的产品参数与实际是否一致",
+                    "确认标签数量与平台当前规范相符",
+                    "根据品牌调性微调语气后再发布",
+                  ]}
+                  onRegenerate={handleGenerate}
+                  onBacktrack={() => { setStep("input"); setPack(null); }}
+                />
+
+                <PlatformResultTabs platforms={pack.platforms} />
+                <FlowFeedback flow={FLOW_NAME} />
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: History */}
+          <aside className={`space-y-4 lg:block ${historyOpen ? "block" : "hidden"}`}>
+            <div className="glass-card-elevated p-5">
+              <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                   <h3 className="font-heading text-sm font-semibold text-white/80">生成历史</h3>
                 </div>
-                <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-gray-500">
-                  {historyItems.length} 条记录
-                </span>
+                {historyItems.length > 0 && (
+                  <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-gray-500">{historyItems.length} 条</span>
+                )}
               </div>
-              <div className="space-y-3">
-                {historyItems.slice(0, 5).map((item) => (
-                  <div
-                    key={item.id}
-                    className="group relative overflow-hidden rounded-2xl border border-white/5 bg-white/[0.02] p-4 transition-all hover:border-white/10 hover:bg-white/[0.04]"
-                  >
-                    <div className="mb-3 flex items-start justify-between gap-2">
-                      <p className="line-clamp-2 text-sm font-medium text-gray-200">
-                        {item.pack.product.name || item.productText.slice(0, 30) || "未命名记录"}
-                      </p>
+
+              {historyItems.length > 0 ? (
+                <div className="space-y-3">
+                  {historyItems.slice(0, 5).map((item) => (
+                    <div key={item.id} className="group relative overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.02] p-4 transition-all hover:border-white/10 hover:bg-white/[0.04]">
                       <button
                         type="button"
                         onClick={() => deleteHistoryItem(item.id)}
-                        className="opacity-0 transition-opacity group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400"
-                        title="删除记录"
+                        className="absolute right-3 top-3 rounded-lg p-1 text-gray-600 opacity-0 transition-all hover:bg-red-500/10 hover:text-red-400 group-hover:opacity-100"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
+                      <p className="mb-2 pr-6 text-sm font-medium text-gray-200 line-clamp-2">
+                        {item.pack.product.name || item.productText.slice(0, 28) || "未命名记录"}
+                      </p>
+                      <p className="mb-3 text-[10px] text-gray-600">
+                        {new Date(item.createdAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      <div className="mb-3 flex flex-wrap gap-1.5">
+                        {item.platforms.slice(0, 4).map((p) => (
+                          <span key={p} className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-black/30 px-1.5 py-0.5 text-[10px] text-gray-400">
+                            <span>{PLATFORM_ICONS[p]}</span><span>{PLATFORM_NAMES[p]}</span>
+                          </span>
+                        ))}
+                        {item.platforms.length > 4 && (
+                          <span className="rounded-md border border-white/[0.08] bg-black/30 px-1.5 py-0.5 text-[10px] text-gray-500">+{item.platforms.length - 4}</span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => applyHistoryInput(item)} className="flex-1 rounded-lg bg-white/[0.05] py-2 text-xs font-medium text-gray-400 transition-colors hover:bg-white/10 hover:text-white">
+                          复用参数
+                        </button>
+                        <button type="button" onClick={() => openHistoryResult(item)} className="flex-1 rounded-lg border border-orange-500/20 bg-orange-500/10 py-2 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20">
+                          查看结果
+                        </button>
+                      </div>
                     </div>
-                    <div className="mb-4 flex flex-wrap gap-1.5">
-                      {item.platforms.slice(0, 3).map(p => (
-                        <span key={p} className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 text-[10px] text-gray-400 uppercase">
-                          {p.substring(0,2)}
-                        </span>
-                      ))}
-                      {item.platforms.length > 3 && (
-                        <span className="rounded border border-white/10 bg-black/40 px-1.5 py-0.5 text-[10px] text-gray-400">+{item.platforms.length - 3}</span>
-                      )}
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => applyHistoryInput(item)}
-                        className="flex-1 rounded-lg bg-white/5 py-2 text-xs font-medium text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
-                      >
-                        复用参数
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openHistoryResult(item)}
-                        className="flex-1 rounded-lg bg-orange-500/10 border border-orange-500/20 py-2 text-xs font-medium text-orange-400 transition-colors hover:bg-orange-500/20 hover:text-orange-300"
-                      >
-                        查看结果
-                      </button>
-                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/[0.06] bg-white/[0.01] py-10 text-center">
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-white/[0.04] text-gray-600">
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                   </div>
-                ))}
-              </div>
-            </section>
-          ) : (
-            <div className="rounded-3xl border border-white/5 border-dashed bg-white/[0.01] p-8 text-center">
-              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-gray-500">
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <p className="text-sm font-medium text-gray-400">暂无生成记录</p>
-              <p className="mt-1 text-xs text-gray-500">您成功生成的内容矩阵将自动保存在这里</p>
+                  <p className="text-sm font-medium text-gray-500">暂无生成记录</p>
+                  <p className="mt-1 text-xs text-gray-600">成功生成后自动保存</p>
+                </div>
+              )}
             </div>
-          )}
-          
-          <div className="rounded-2xl bg-gradient-to-b from-blue-500/10 to-transparent p-5 border border-blue-500/20">
-            <h4 className="mb-2 flex items-center gap-2 text-sm font-semibold text-blue-400">
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              高转化 Tip
-            </h4>
-            <p className="text-xs text-blue-300/80 leading-relaxed">
-              输入内容越详细，包含产品痛点、独特优势或受众特征，AI 生成的文案和脚本质量就越高。您可以直接把京东淘宝的详情页文案复制进去。
-            </p>
-          </div>
+
+            <div className="rounded-2xl border border-blue-500/15 bg-gradient-to-b from-blue-500/[0.08] to-transparent p-5">
+              <h4 className="mb-2.5 flex items-center gap-2 text-sm font-semibold text-blue-400">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                高转化技巧
+              </h4>
+              <p className="text-xs leading-relaxed text-blue-300/70">
+                描述越详细效果越好。可直接粘贴电商详情页文案，包含痛点、成分、使用场景和目标人群，AI 会自动提炼核心卖点。
+              </p>
+            </div>
+          </aside>
         </div>
       </div>
     </main>
