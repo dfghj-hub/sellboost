@@ -18,7 +18,7 @@ export function getLLMClient(): OpenAI {
     config = getLLMConfig();
   }
   if (provider !== "ollama" && !config.apiKey) {
-    throw new Error("服务暂时不可用，请稍后重试");
+    throw new Error("模型配置错误：缺少或未正确设置 API Key，请在 Vercel 环境变量中配置对应的密钥");
   }
   cachedClient = new OpenAI({
     baseURL: config.baseURL,
