@@ -266,6 +266,9 @@ export default function GeneratePage() {
                       onChange={(e) => setProductUrl(e.target.value)}
                     />
                   </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    若填写链接，系统会尝试抓取页面文案与参数，辅助更准确地理解产品（失败时会自动降级为只用上方文本）。
+                  </p>
                 </div>
 
                 {/* Platform + Content Type + Goal */}

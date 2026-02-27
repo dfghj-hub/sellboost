@@ -33,6 +33,63 @@ const SYSTEM_PROMPT = `你是一位资深电商与营销分析师。根据用户
 }`;
 
 const MAX_TEXT_LENGTH = 8000;
+const MAX_PAGE_TEXT_LENGTH = 6000;
+
+function isSafeProductUrl(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+    // 避免请求本机 / 内网地址，降低 SSRF 风险
+    const hostname = url.hostname.toLowerCase();
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname.endsWith(".local")
+    ) {
+      return undefined;
+    }
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function fetchProductPageSummary(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent":
+          "SellBoostBot/1.0 (+https://sellboost.vercel.app; fetch product detail for copywriting)",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      },
+      redirect: "follow",
+    });
+    if (!res.ok || !res.headers.get("content-type")?.includes("text/html")) {
+      return null;
+    }
+    const html = await res.text();
+    if (!html) return null;
+
+    // 简单去掉 script/style，提取可见文本
+    const withoutScripts = html
+      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+    const text = withoutScripts
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, MAX_PAGE_TEXT_LENGTH);
+
+    if (!text) return null;
+
+    return text;
+  } catch {
+    // 抓取失败时静默降级，不影响整体流程
+    return null;
+  }
+}
 
 function parseAudienceSegment(raw: unknown): AudienceSegment {
   if (!raw || typeof raw !== "object") {
@@ -83,7 +140,8 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const text = typeof body?.text === "string" ? body.text.trim() : "";
-    const url = typeof body?.url === "string" ? body.url.trim() : undefined;
+    const rawUrl = typeof body?.url === "string" ? body.url.trim() : undefined;
+    const safeUrl = isSafeProductUrl(rawUrl);
 
     if (!text) {
       return NextResponse.json({ error: "请提供产品/服务描述文本" }, { status: 400 });
@@ -95,9 +153,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const userMsg = url
-      ? `产品/服务描述：\n${text}\n\n参考链接（如有用可纳入分析）：${url}`
-      : `产品/服务描述：\n${text}`;
+    let linkSummaryBlock = "";
+    if (safeUrl) {
+      const summary = await fetchProductPageSummary(safeUrl);
+      if (summary) {
+        linkSummaryBlock = [
+          "",
+          "【来自产品链接的大致内容摘要】",
+          `链接：${safeUrl}`,
+          summary,
+        ].join("\n");
+      } else {
+        linkSummaryBlock = [``, `【参考链接】`, safeUrl].join("\n");
+      }
+    }
+
+    const userMsg = [`产品/服务描述：`, text, linkSummaryBlock].join("\n");
 
     const raw = await llmGenerate(SYSTEM_PROMPT, userMsg, {
       json: true,
